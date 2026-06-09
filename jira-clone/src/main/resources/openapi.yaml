@@ -1,0 +1,819 @@
+openapi: 3.0.3
+info:
+  title: Project Board API
+  description: |
+    Jira-like project management backend.
+
+    ## Authentication
+    All `/api/v1/*` routes require the `X-User-Id` header (seed users: `user_admin`, `user_lead`, `user_member`, `user_viewer`).
+
+    ## Optimistic locking
+    Issue updates and transitions require the current `version`. Stale versions return **409** with the current issue.
+
+    ## WebSocket
+    Real-time board updates: `ws://{host}/ws/board?project_id={projectId}&user_id={userId}`
+
+    Events: `issue_created`, `issue_updated`, `issue_moved`, `comment_added`, `sprint_updated`, `presence`
+  version: 1.0.0
+  contact:
+    name: Project Board
+
+servers:
+  - url: http://localhost:8001
+    description: Local development
+
+tags:
+  - name: Issues
+  - name: Board
+  - name: Sprints
+  - name: Comments
+  - name: Activity
+  - name: Search
+  - name: Health
+
+paths:
+  /api/v1/projects/{projectId}/board:
+    get:
+      tags: [Board]
+      summary: Get board view
+      description: Kanban columns with issues grouped by status. Cached in Redis (30s TTL).
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Board state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardView'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/projects/{projectId}/issues:
+    post:
+      tags: [Issues]
+      summary: Create issue
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIssueRequest'
+            example:
+              type: STORY
+              title: Add user authentication via OAuth
+              description: Implement OAuth 2.0 login flow
+              priority: HIGH
+              assigneeId: user_member
+              sprintId: sprint_10
+              parentId: PROJ-100
+              storyPoints: 5
+              labels: [auth, backend]
+      responses:
+        '201':
+          description: Issue created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Issue'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/issues/{issueId}:
+    get:
+      tags: [Issues]
+      summary: Get issue by ID
+      parameters:
+        - $ref: '#/components/parameters/IssueId'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Issue details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Issue'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [Issues]
+      summary: Update issue
+      description: Requires current `version` for optimistic locking.
+      parameters:
+        - $ref: '#/components/parameters/IssueId'
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateIssueRequest'
+            example:
+              version: 3
+              priority: HIGH
+              assigneeId: user_member
+      responses:
+        '200':
+          description: Updated issue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Issue'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/issues/{issueId}/transitions:
+    post:
+      tags: [Issues]
+      summary: Transition issue status
+      description: |
+        Moves issue through the project workflow. Invalid transitions return **422** with `allowed_transitions`.
+        Some transitions trigger automatic actions (e.g. assign reviewer on move to In Review).
+      parameters:
+        - $ref: '#/components/parameters/IssueId'
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransitionRequest'
+            example:
+              toStatus: In Review
+              version: 3
+      responses:
+        '200':
+          description: Issue after transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Issue'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/issues/{issueId}/sprint:
+    post:
+      tags: [Issues, Sprints]
+      summary: Move issue to sprint
+      description: Set `sprintId` to move into a sprint. Use `null` to move to backlog.
+      parameters:
+        - $ref: '#/components/parameters/IssueId'
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveSprintRequest'
+            example:
+              sprintId: sprint_10
+      responses:
+        '204':
+          description: Issue moved
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/projects/{projectId}/sprints:
+    get:
+      tags: [Sprints]
+      summary: List sprints
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Sprint list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Sprint'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/sprints/{sprintId}/start:
+    post:
+      tags: [Sprints]
+      summary: Start sprint
+      description: Requires PROJECT_LEAD or ADMIN. Uses PostgreSQL advisory lock.
+      parameters:
+        - $ref: '#/components/parameters/SprintId'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: Sprint started
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/sprints/{sprintId}/complete:
+    post:
+      tags: [Sprints]
+      summary: Complete sprint
+      description: |
+        Completes sprint with optional carry-over of incomplete issues.
+        Non-carried incomplete issues return to backlog. Returns velocity metrics.
+      parameters:
+        - $ref: '#/components/parameters/SprintId'
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteSprintRequest'
+            example:
+              carryOver: [PROJ-123, PROJ-124]
+      responses:
+        '200':
+          description: Sprint completion summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SprintCompleteResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/issues/{issueId}/comments:
+    get:
+      tags: [Comments]
+      summary: List comments
+      parameters:
+        - $ref: '#/components/parameters/IssueId'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Comments for issue
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Comment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags: [Comments]
+      summary: Add comment
+      description: Supports `@mentions` in body text (e.g. `@user_member`).
+      parameters:
+        - $ref: '#/components/parameters/IssueId'
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddCommentRequest'
+            example:
+              body: Please review @user_member
+              parentId: null
+      responses:
+        '201':
+          description: Comment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/projects/{projectId}/activity:
+    get:
+      tags: [Activity]
+      summary: Activity feed
+      description: Paginated, filterable event stream for a project.
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/UserId'
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Activity event ID for pagination
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: event_type
+          in: query
+          schema:
+            type: string
+            enum: [issue_created, issue_updated, issue_moved, comment_added, sprint_updated]
+        - name: issue_id
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Activity events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ActivityEvent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/search:
+    get:
+      tags: [Search]
+      summary: Search issues
+      description: |
+        Full-text search across titles, descriptions, and comments.
+        Structured filter example: `status = "In Progress" AND assignee = "Bob Chen"`
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Full-text query
+        - name: filter
+          in: query
+          schema:
+            type: string
+          description: Structured filter expression
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/health/live:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      responses:
+        '200':
+          description: Process is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: UP
+
+  /api/health/ready:
+    get:
+      tags: [Health]
+      summary: Readiness probe
+      responses:
+        '200':
+          description: Ready to serve traffic
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  db:
+                    type: string
+        '503':
+          description: Not ready
+
+  /api/metrics:
+    get:
+      tags: [Health]
+      summary: Prometheus metrics
+      responses:
+        '200':
+          description: Prometheus text format
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  parameters:
+    UserId:
+      name: X-User-Id
+      in: header
+      required: true
+      schema:
+        type: string
+      example: user_member
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+      example: proj_abc
+    IssueId:
+      name: issueId
+      in: path
+      required: true
+      schema:
+        type: string
+      example: PROJ-123
+    SprintId:
+      name: sprintId
+      in: path
+      required: true
+      schema:
+        type: string
+      example: sprint_10
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: UNAUTHORIZED
+            message: Missing X-User-Id header
+            correlation_id: abc-123
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Optimistic lock conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ConflictResponse'
+    ValidationError:
+      description: Workflow or validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationErrorResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error, message, correlation_id]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        correlation_id:
+          type: string
+
+    ConflictResponse:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            current:
+              $ref: '#/components/schemas/Issue'
+
+    ValidationErrorResponse:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            allowed_transitions:
+              type: array
+              items:
+                type: string
+
+    UserRef:
+      type: object
+      properties:
+        userId:
+          type: string
+        displayName:
+          type: string
+
+    SprintRef:
+      type: object
+      properties:
+        sprintId:
+          type: string
+        name:
+          type: string
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+
+    Issue:
+      type: object
+      properties:
+        issueId:
+          type: string
+          example: PROJ-123
+        projectId:
+          type: string
+        type:
+          $ref: '#/components/schemas/IssueType'
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+          example: In Progress
+        priority:
+          $ref: '#/components/schemas/Priority'
+        version:
+          type: integer
+          description: Optimistic lock version
+        assignee:
+          $ref: '#/components/schemas/UserRef'
+          nullable: true
+        reporter:
+          $ref: '#/components/schemas/UserRef'
+        sprint:
+          $ref: '#/components/schemas/SprintRef'
+          nullable: true
+        labels:
+          type: array
+          items:
+            type: string
+        storyPoints:
+          type: integer
+          nullable: true
+        parentId:
+          type: string
+          nullable: true
+        watchers:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    IssueType:
+      type: string
+      enum: [EPIC, STORY, TASK, BUG, SUB_TASK]
+
+    Priority:
+      type: string
+      enum: [LOWEST, LOW, MEDIUM, HIGH, HIGHEST]
+
+    CreateIssueRequest:
+      type: object
+      required: [type, title, priority]
+      properties:
+        type:
+          $ref: '#/components/schemas/IssueType'
+        title:
+          type: string
+        description:
+          type: string
+        priority:
+          $ref: '#/components/schemas/Priority'
+        assigneeId:
+          type: string
+        sprintId:
+          type: string
+          nullable: true
+        parentId:
+          type: string
+          nullable: true
+        storyPoints:
+          type: integer
+        labels:
+          type: array
+          items:
+            type: string
+
+    UpdateIssueRequest:
+      type: object
+      required: [version]
+      properties:
+        version:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        priority:
+          $ref: '#/components/schemas/Priority'
+        assigneeId:
+          type: string
+        storyPoints:
+          type: integer
+        labels:
+          type: array
+          items:
+            type: string
+
+    TransitionRequest:
+      type: object
+      required: [toStatus, version]
+      properties:
+        toStatus:
+          type: string
+          example: In Review
+        version:
+          type: integer
+
+    MoveSprintRequest:
+      type: object
+      properties:
+        sprintId:
+          type: string
+          nullable: true
+
+    BoardView:
+      type: object
+      properties:
+        projectId:
+          type: string
+        columns:
+          type: array
+          items:
+            $ref: '#/components/schemas/BoardColumn'
+
+    BoardColumn:
+      type: object
+      properties:
+        status:
+          type: string
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/Issue'
+
+    Sprint:
+      type: object
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        name:
+          type: string
+        startDate:
+          type: string
+          format: date
+          nullable: true
+        endDate:
+          type: string
+          format: date
+          nullable: true
+        status:
+          type: string
+          enum: [PLANNED, ACTIVE, COMPLETED]
+
+    CompleteSprintRequest:
+      type: object
+      properties:
+        carryOver:
+          type: array
+          items:
+            type: string
+          description: Issue IDs to keep in sprint after completion
+
+    SprintCompleteResult:
+      type: object
+      properties:
+        sprintId:
+          type: string
+        completedPoints:
+          type: integer
+        incompletePoints:
+          type: integer
+        incompleteIssueIds:
+          type: array
+          items:
+            type: string
+
+    Comment:
+      type: object
+      properties:
+        id:
+          type: string
+        issueId:
+          type: string
+        author:
+          $ref: '#/components/schemas/UserRef'
+        body:
+          type: string
+        parentId:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    AddCommentRequest:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+        parentId:
+          type: string
+          nullable: true
+
+    ActivityEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        issueId:
+          type: string
+          nullable: true
+        actorId:
+          type: string
+        eventType:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+
+    SearchResult:
+      type: object
+      properties:
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/Issue'
+        nextCursor:
+          type: string
+          nullable: true
