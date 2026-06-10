@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projectboard.domain.model.BoardView;
 import io.lettuce.core.ClientOptions;
 import io.lettuce.core.RedisClient;
+import io.lettuce.core.RedisConnectionException;
 import io.lettuce.core.SocketOptions;
 import io.lettuce.core.TimeoutOptions;
 import io.lettuce.core.api.StatefulRedisConnection;
@@ -21,9 +22,9 @@ public class RedisCache implements AutoCloseable {
     private static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(2);
 
     private final RedisClient client;
-    private final StatefulRedisConnection<String, String> conn;
-    private final RedisCommands<String, String> cmd;
     private final ObjectMapper mapper;
+    private volatile StatefulRedisConnection<String, String> conn;
+    private volatile RedisCommands<String, String> cmd;
 
     public RedisCache(String redisUrl, ObjectMapper mapper) {
         this.client = RedisClient.create(redisUrl);
@@ -36,15 +37,28 @@ public class RedisCache implements AutoCloseable {
                         .build())
                 .autoReconnect(true)
                 .build());
-        this.conn = client.connect();
-        this.cmd = conn.sync();
         this.mapper = mapper;
-        log.info("Redis connected");
+        log.info("Redis client configured (connects on first use)");
+    }
+
+    private RedisCommands<String, String> commands() {
+        RedisCommands<String, String> existing = cmd;
+        if (existing != null) {
+            return existing;
+        }
+        synchronized (this) {
+            if (cmd == null) {
+                conn = client.connect();
+                cmd = conn.sync();
+                log.info("Redis connected");
+            }
+            return cmd;
+        }
     }
 
     public Optional<BoardView> getBoard(String projectId) {
         try {
-            String json = cmd.get(boardKey(projectId));
+            String json = commands().get(boardKey(projectId));
             if (json == null) return Optional.empty();
             return Optional.of(mapper.readValue(json, BoardView.class));
         } catch (Exception e) {
@@ -54,37 +68,41 @@ public class RedisCache implements AutoCloseable {
 
     public void putBoard(String projectId, BoardView board) {
         try {
-            cmd.setex(boardKey(projectId), 30, mapper.writeValueAsString(board));
+            commands().setex(boardKey(projectId), 30, mapper.writeValueAsString(board));
         } catch (Exception ignored) {}
     }
 
     public void invalidateBoard(String projectId) {
         try {
-            cmd.del(boardKey(projectId));
+            commands().del(boardKey(projectId));
         } catch (Exception ignored) {}
     }
 
     /** Returns true if allowed. Fails open when Redis is unavailable. */
     public boolean checkRateLimit(String key, int max, Duration window) {
         try {
-            String count = cmd.get(key);
+            RedisCommands<String, String> redis = commands();
+            String count = redis.get(key);
             if (count == null) {
-                cmd.setex(key, window.getSeconds(), "1");
+                redis.setex(key, window.getSeconds(), "1");
                 return true;
             }
             int n = Integer.parseInt(count);
             if (n >= max) return false;
-            cmd.incr(key);
+            redis.incr(key);
+            return true;
+        } catch (RedisConnectionException e) {
+            log.warn("Rate limit skipped (Redis unavailable): {}", e.getMessage());
             return true;
         } catch (Exception e) {
-            log.warn("Rate limit skipped (Redis unavailable): {}", e.getMessage());
+            log.warn("Rate limit skipped (Redis error): {}", e.getMessage());
             return true;
         }
     }
 
     public Optional<IdempotencyRecord> getIdempotency(String key) {
         try {
-            String json = cmd.get("idempotency:" + key);
+            String json = commands().get("idempotency:" + key);
             if (json == null) return Optional.empty();
             return Optional.of(mapper.readValue(json, IdempotencyRecord.class));
         } catch (Exception e) {
@@ -94,7 +112,7 @@ public class RedisCache implements AutoCloseable {
 
     public void storeIdempotency(String key, IdempotencyRecord record) {
         try {
-            cmd.setex("idempotency:" + key, 86400, mapper.writeValueAsString(record));
+            commands().setex("idempotency:" + key, 86400, mapper.writeValueAsString(record));
         } catch (Exception ignored) {}
     }
 
@@ -104,7 +122,9 @@ public class RedisCache implements AutoCloseable {
 
     @Override
     public void close() {
-        conn.close();
+        if (conn != null) {
+            conn.close();
+        }
         client.shutdown();
     }
 

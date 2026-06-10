@@ -52,7 +52,10 @@ public class HealthRoutes {
                 return;
             }
             try (var conn = ds.getConnection()) {
-                conn.isValid(2);
+                if (!conn.isValid(1)) {
+                    ctx.status(503).json(Map.of("status", "DOWN", "db", "invalid"));
+                    return;
+                }
                 ctx.json(Map.of("status", "UP", "db", "connected"));
             } catch (Exception e) {
                 ctx.status(503).json(Map.of("status", "DOWN", "db", e.getMessage()));

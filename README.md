@@ -112,6 +112,10 @@ The app reads `DATABASE_URL` and `REDIS_URL` from linked services, binds to Rend
 
 Free-tier web services spin down after inactivity; the first request after idle may take ~30s.
 
+**Health check timeout on `/api/health/ready`:** Render Dashboard → **project-board** → **Settings** → **Health Check Path** → set to **`/api/health/live`**. The `/ready` endpoint also checks Postgres and can fail during cold start before the server is listening.
+
+**`Connection to localhost:5432 refused`:** link `DATABASE_URL` and `REDIS_URL` from your Postgres and Key Value services in **Environment**.
+
 ## Demo hosting
 
 Host on your **internal network** (company VPN / internal VM):

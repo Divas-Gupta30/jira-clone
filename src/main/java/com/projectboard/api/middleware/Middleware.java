@@ -35,6 +35,49 @@ public final class Middleware {
         };
     }
 
+    public static Handler requestTimer() {
+        return ctx -> {
+            if (!isApiPath(ctx.path())) {
+                return;
+            }
+            ctx.attribute("requestStartMs", System.currentTimeMillis());
+        };
+    }
+
+    public static Handler requestLogging() {
+        return ctx -> {
+            if (!isApiPath(ctx.path()) || skipAccessLog(ctx.path())) {
+                return;
+            }
+
+            long startMs = ctx.attribute("requestStartMs") != null
+                    ? ctx.attribute("requestStartMs")
+                    : System.currentTimeMillis();
+            long durationMs = System.currentTimeMillis() - startMs;
+
+            String userId = ctx.attribute("userId");
+            if (userId != null && !userId.isBlank()) {
+                MDC.put("userId", userId);
+            }
+
+            int status = ctx.status().getCode();
+            String method = ctx.method().name();
+            String path = ctx.path();
+            String errorCode = ctx.attribute("errorCode");
+            String message = String.format("%s %s status=%d durationMs=%d userId=%s%s",
+                    method, path, status, durationMs, userId != null ? userId : "-",
+                    errorCode != null ? " error=" + errorCode : "");
+
+            if (status >= 500) {
+                log.error("API {}", message);
+            } else if (status >= 400) {
+                log.warn("API {}", message);
+            } else {
+                log.info("API {}", message);
+            }
+        };
+    }
+
     public static Handler auth() {
         return ctx -> {
             if (ctx.path().startsWith("/api/v1/admin")) {
@@ -101,6 +144,8 @@ public final class Middleware {
     public static void handleException(Exception e, Context ctx) {
         MDC.put("correlationId", ctx.attribute("correlationId"));
         String corrId = ctx.attribute("correlationId");
+        String userId = ctx.attribute("userId");
+        String request = ctx.method() + " " + ctx.path();
 
         if (e instanceof AppException app) {
             HttpStatus status;
@@ -113,6 +158,7 @@ public final class Middleware {
             } else {
                 status = HttpStatus.NOT_FOUND;
             }
+            ctx.attribute("errorCode", app.code());
             Map<String, Object> body = errorBody(app.code(), app.getMessage(), corrId);
             if (app instanceof ValidationException ve && !ve.allowedTransitions().isEmpty()) {
                 body.put("allowed_transitions", ve.allowedTransitions());
@@ -124,12 +170,22 @@ public final class Middleware {
             return;
         }
 
-        log.error("Unhandled error", e);
+        log.error("API unhandled error {} userId={}", request, userId != null ? userId : "-", e);
+        ctx.attribute("errorCode", "INTERNAL_ERROR");
         ctx.status(500).json(errorBody("INTERNAL_ERROR", "Internal server error", corrId));
     }
 
     public static void error(Context ctx, HttpStatus status, String code, String message) {
+        ctx.attribute("errorCode", code);
         ctx.status(status).json(errorBody(code, message, ctx.attribute("correlationId")));
+    }
+
+    private static boolean isApiPath(String path) {
+        return path.startsWith("/api");
+    }
+
+    private static boolean skipAccessLog(String path) {
+        return path.equals("/api/health/live") || path.equals("/api/metrics");
     }
 
     private static Map<String, Object> errorBody(String code, String message, String correlationId) {

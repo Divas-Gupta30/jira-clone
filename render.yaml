@@ -17,7 +17,7 @@ services:
     name: project-board
     runtime: docker
     plan: free
-    healthCheckPath: /api/health/live
+    healthCheckPath: /api/health/live  # NOT /ready — ready needs DB; live responds as soon as HTTP is up
     envVars:
       - key: DATABASE_URL
         fromDatabase:

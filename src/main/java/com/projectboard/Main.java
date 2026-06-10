@@ -10,11 +10,14 @@ public class Main {
 
     public static void main(String[] args) {
         AppConfig config = AppConfig.fromEnv();
+        log.info("Bootstrapping (db={}, port={})...", config.dbUrl(), config.port());
+        long started = System.currentTimeMillis();
         Application.Context ctx = Application.create(config);
+        log.info("Bootstrap completed in {}ms", System.currentTimeMillis() - started);
 
         Runtime.getRuntime().addShutdownHook(new Thread(ctx::close));
 
         ctx.app().start(config.port());
-        log.info("Server started on port {}", config.port());
+        log.info("Server listening on port {} — health: /api/health/live", config.port());
     }
 }

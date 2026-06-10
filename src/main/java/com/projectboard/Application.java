@@ -73,8 +73,10 @@ public final class Application {
         });
 
         app.before(Middleware.correlationId());
+        app.before(Middleware.requestTimer());
         app.before("/api/v1/admin/*", Middleware.adminAuth(config, accessRepo));
         app.before("/api/v1/admin/*", Middleware.rateLimit(cache, 120));
+        app.after(Middleware.requestLogging());
         app.after(ctx -> MDC.clear());
 
         health.register(app);
