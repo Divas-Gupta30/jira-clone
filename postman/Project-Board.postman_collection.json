@@ -1,0 +1,722 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-project-board-api",
+    "name": "Project Board API",
+    "description": "Jira-like project board backend — health, admin seed, issues, board, sprints, comments, activity, and search.\n\n## Setup\n1. Import this collection.\n2. Set collection variables:\n   - `baseUrl` — e.g. `http://localhost:8001` or `https://your-app.onrender.com`\n   - `adminApiKey` — your `ADMIN_API_KEY` (or `demo-admin-key` for local Docker)\n3. Run **Flows** folder top-to-bottom, or individual requests.\n\n## Auth\n- Regular API: `X-User-Id` header (seed users: user_admin, user_lead, user_member, user_viewer)\n- Admin API: `X-Admin-Key` **or** `X-User-Id: user_admin`\n\nDocs: docs/admin-api.md",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8001" },
+    { "key": "adminApiKey", "value": "demo-admin-key" },
+    { "key": "projectId", "value": "proj_abc" },
+    { "key": "memberUserId", "value": "user_member" },
+    { "key": "leadUserId", "value": "user_lead" },
+    { "key": "viewerUserId", "value": "user_viewer" },
+    { "key": "adminUserId", "value": "user_admin" },
+    { "key": "issueId", "value": "PROJ-123" },
+    { "key": "issueVersion", "value": "3" },
+    { "key": "sprintId", "value": "sprint_11" },
+    { "key": "demoProjectId", "value": "proj_demo" },
+    { "key": "demoUserId", "value": "user_demo" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Liveness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/health/live"
+          }
+        },
+        {
+          "name": "Readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/health/ready"
+          }
+        },
+        {
+          "name": "Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/metrics"
+          }
+        },
+        {
+          "name": "OpenAPI spec",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/docs/openapi.yaml"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin / Seed",
+      "description": "Requires X-Admin-Key or X-User-Id: user_admin. See docs/admin-api.md",
+      "item": [
+        {
+          "name": "Get seed snapshot",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Admin-Key", "value": "{{adminApiKey}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/seed"
+          }
+        },
+        {
+          "name": "Add user",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Admin-Key", "value": "{{adminApiKey}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{demoUserId}}\",\n  \"email\": \"demo@example.com\",\n  \"displayName\": \"Demo User\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/admin/seed/users"
+          }
+        },
+        {
+          "name": "Create project",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('demoProjectId', body.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Admin-Key", "value": "{{adminApiKey}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"proj_demo\",\n  \"key\": \"DEMO\",\n  \"name\": \"Demo Team\",\n  \"adminUserId\": \"user_admin\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/admin/seed/projects"
+          }
+        },
+        {
+          "name": "Add project member",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Admin-Key", "value": "{{adminApiKey}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{demoUserId}}\",\n  \"role\": \"VIEWER\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/admin/seed/projects/{{demoProjectId}}/members"
+          }
+        },
+        {
+          "name": "Remove project member",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "X-Admin-Key", "value": "{{adminApiKey}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/seed/projects/{{demoProjectId}}/members/{{demoUserId}}"
+          }
+        },
+        {
+          "name": "Remove user",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "X-Admin-Key", "value": "{{adminApiKey}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/seed/users/{{demoUserId}}"
+          }
+        },
+        {
+          "name": "Remove project",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "X-Admin-Key", "value": "{{adminApiKey}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/seed/projects/{{demoProjectId}}"
+          }
+        },
+        {
+          "name": "Reset seed data",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Admin-Key", "value": "{{adminApiKey}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/seed/reset"
+          }
+        },
+        {
+          "name": "Admin via user_admin (no API key)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Id", "value": "{{adminUserId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/seed"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Board",
+      "item": [
+        {
+          "name": "Get board",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Id", "value": "{{memberUserId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/projects/{{projectId}}/board"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Issues",
+      "item": [
+        {
+          "name": "Get issue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('issueId', body.issueId);",
+                  "  pm.collectionVariables.set('issueVersion', String(body.version));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Id", "value": "{{memberUserId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/issues/{{issueId}}"
+          }
+        },
+        {
+          "name": "Create issue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('issueId', body.issueId);",
+                  "  pm.collectionVariables.set('issueVersion', String(body.version));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Id", "value": "{{memberUserId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"TASK\",\n  \"title\": \"Postman test task\",\n  \"description\": \"Created from Postman collection\",\n  \"priority\": \"MEDIUM\",\n  \"assigneeId\": \"user_member\",\n  \"labels\": [\"postman\"]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/projects/{{projectId}}/issues"
+          }
+        },
+        {
+          "name": "Update issue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('issueVersion', String(pm.response.json().version));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "X-User-Id", "value": "{{memberUserId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": {{issueVersion}},\n  \"priority\": \"HIGH\",\n  \"title\": \"Postman test task (updated)\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/issues/{{issueId}}"
+          }
+        },
+        {
+          "name": "Transition — To Do → In Progress",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('issueVersion', String(pm.response.json().version));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Id", "value": "{{memberUserId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"toStatus\": \"In Progress\",\n  \"version\": {{issueVersion}}\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/issues/{{issueId}}/transitions"
+          }
+        },
+        {
+          "name": "Transition — In Progress → In Review",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('issueVersion', String(pm.response.json().version));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Id", "value": "{{memberUserId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"toStatus\": \"In Review\",\n  \"version\": {{issueVersion}}\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/issues/{{issueId}}/transitions"
+          }
+        },
+        {
+          "name": "Invalid transition (expect 422)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Id", "value": "{{memberUserId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"toStatus\": \"Done\",\n  \"version\": 1\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/issues/PROJ-124/transitions"
+          }
+        },
+        {
+          "name": "Stale version update (expect 409)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "X-User-Id", "value": "{{memberUserId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": 1,\n  \"title\": \"Stale update\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/issues/{{issueId}}"
+          }
+        },
+        {
+          "name": "Move issue to sprint",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Id", "value": "{{leadUserId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sprintId\": \"sprint_10\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/issues/{{issueId}}/sprint"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sprints",
+      "item": [
+        {
+          "name": "List sprints",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Id", "value": "{{memberUserId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/projects/{{projectId}}/sprints"
+          }
+        },
+        {
+          "name": "Start sprint",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Id", "value": "{{leadUserId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/sprints/{{sprintId}}/start"
+          }
+        },
+        {
+          "name": "Complete sprint",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Id", "value": "{{leadUserId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"carryOver\": [\"PROJ-124\"]\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/sprints/{{sprintId}}/complete"
+          }
+        },
+        {
+          "name": "Member cannot start sprint (expect 403)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Id", "value": "{{memberUserId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/sprints/{{sprintId}}/start"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Comments",
+      "item": [
+        {
+          "name": "List comments",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Id", "value": "{{memberUserId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/issues/PROJ-123/comments"
+          }
+        },
+        {
+          "name": "Add comment",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Id", "value": "{{leadUserId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Please review @user_member\",\n  \"parentId\": null\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/issues/PROJ-123/comments"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Activity & Search",
+      "item": [
+        {
+          "name": "Activity feed",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Id", "value": "{{leadUserId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{projectId}}/activity?limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects", "{{projectId}}", "activity"],
+              "query": [{ "key": "limit", "value": "10" }]
+            }
+          }
+        },
+        {
+          "name": "Search by text",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Id", "value": "{{memberUserId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/search?q=OAuth&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "search"],
+              "query": [
+                { "key": "q", "value": "OAuth" },
+                { "key": "limit", "value": "10" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Search with filter",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Id", "value": "{{memberUserId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/search?filter=type = \"STORY\"&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "search"],
+              "query": [
+                { "key": "filter", "value": "type = \"STORY\"" },
+                { "key": "limit", "value": "10" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth & RBAC",
+      "item": [
+        {
+          "name": "Missing X-User-Id (expect 401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/projects/{{projectId}}/board"
+          }
+        },
+        {
+          "name": "Viewer cannot create issue (expect 403)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Id", "value": "{{viewerUserId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"TASK\",\n  \"title\": \"Not allowed\",\n  \"priority\": \"LOW\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/projects/{{projectId}}/issues"
+          }
+        },
+        {
+          "name": "Member cannot access admin (expect 403)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Id", "value": "{{memberUserId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/seed"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Flows",
+      "description": "Run requests in order. Tests chain issueId and issueVersion between steps.",
+      "item": [
+        {
+          "name": "1 — Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/health/ready"
+          }
+        },
+        {
+          "name": "2 — Get board (seed data)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Id", "value": "{{memberUserId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/projects/{{projectId}}/board"
+          }
+        },
+        {
+          "name": "3 — Create issue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Created issue', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('issueId', body.issueId);",
+                  "pm.collectionVariables.set('issueVersion', String(body.version));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Id", "value": "{{memberUserId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"TASK\",\n  \"title\": \"Flow test task\",\n  \"priority\": \"MEDIUM\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/projects/{{projectId}}/issues"
+          }
+        },
+        {
+          "name": "4 — Transition to In Progress",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Transitioned', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('issueVersion', String(pm.response.json().version));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Id", "value": "{{memberUserId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"toStatus\": \"In Progress\",\n  \"version\": {{issueVersion}}\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/issues/{{issueId}}/transitions"
+          }
+        },
+        {
+          "name": "5 — Add comment",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Id", "value": "{{leadUserId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Flow test comment @user_member\",\n  \"parentId\": null\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/issues/{{issueId}}/comments"
+          }
+        },
+        {
+          "name": "6 — Activity feed",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Id", "value": "{{leadUserId}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/projects/{{projectId}}/activity?limit=5"
+          }
+        },
+        {
+          "name": "7 — Admin: create demo project",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('demoProjectId', pm.response.json().id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Admin-Key", "value": "{{adminApiKey}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"proj_demo\",\n  \"key\": \"DEMO\",\n  \"name\": \"Postman Demo\",\n  \"adminUserId\": \"user_admin\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/admin/seed/projects"
+          }
+        },
+        {
+          "name": "8 — Admin: create issue on demo project",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Id", "value": "{{adminUserId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"TASK\",\n  \"title\": \"First DEMO issue\",\n  \"priority\": \"LOW\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/projects/{{demoProjectId}}/issues"
+          }
+        },
+        {
+          "name": "9 — Admin: cleanup demo project",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "X-Admin-Key", "value": "{{adminApiKey}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/seed/projects/{{demoProjectId}}"
+          }
+        }
+      ]
+    }
+  ]
+}

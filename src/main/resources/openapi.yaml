@@ -7,6 +7,10 @@ info:
     ## Authentication
     All `/api/v1/*` routes require the `X-User-Id` header (seed users: `user_admin`, `user_lead`, `user_member`, `user_viewer`).
 
+    ## Admin seed API
+    `/api/v1/admin/*` routes require **either** `X-Admin-Key: <ADMIN_API_KEY>` **or** `X-User-Id: user_admin`.
+    See [docs/admin-api.md](../docs/admin-api.md) for full admin documentation.
+
     ## Optimistic locking
     Issue updates and transitions require the current `version`. Stale versions return **409** with the current issue.
 
@@ -23,6 +27,8 @@ servers:
     description: Local development
 
 tags:
+  - name: Admin
+    description: Seed data management (users, projects, memberships). Requires X-Admin-Key or platform admin user.
   - name: Issues
   - name: Board
   - name: Sprints
@@ -403,6 +409,196 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/v1/admin/seed:
+    get:
+      tags: [Admin]
+      summary: Seed data snapshot
+      description: Lists all seed-managed users, projects, and memberships.
+      security:
+        - AdminKey: []
+        - AdminUser: []
+      responses:
+        '200':
+          description: Current seed state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeedSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/seed/reset:
+    post:
+      tags: [Admin]
+      summary: Reset seed data
+      description: Restores Flyway default seed data (users, proj_abc, sample issues and sprints).
+      security:
+        - AdminKey: []
+        - AdminUser: []
+      responses:
+        '200':
+          description: Seed state after reset
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeedSnapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/seed/users:
+    post:
+      tags: [Admin]
+      summary: Add user
+      security:
+        - AdminKey: []
+        - AdminUser: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddUserRequest'
+            example:
+              id: user_reviewer
+              email: reviewer@example.com
+              displayName: Reviewer
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AddUserRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/seed/users/{userId}:
+    delete:
+      tags: [Admin]
+      summary: Remove user
+      security:
+        - AdminKey: []
+        - AdminUser: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: User removed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/seed/projects:
+    post:
+      tags: [Admin]
+      summary: Create project
+      description: Creates project with default Kanban workflow and transitions.
+      security:
+        - AdminKey: []
+        - AdminUser: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+            example:
+              id: proj_demo
+              key: DEMO
+              name: Demo Team
+              adminUserId: user_admin
+      responses:
+        '201':
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateProjectResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/seed/projects/{projectId}:
+    delete:
+      tags: [Admin]
+      summary: Remove project
+      security:
+        - AdminKey: []
+        - AdminUser: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '204':
+          description: Project removed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/seed/projects/{projectId}/members:
+    post:
+      tags: [Admin]
+      summary: Add project member
+      security:
+        - AdminKey: []
+        - AdminUser: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddMemberRequest'
+            example:
+              userId: user_member
+              role: MEMBER
+      responses:
+        '201':
+          description: Member added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AddMemberRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/seed/projects/{projectId}/members/{userId}:
+    delete:
+      tags: [Admin]
+      summary: Remove project member
+      security:
+        - AdminKey: []
+        - AdminUser: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Member removed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /api/health/live:
     get:
       tags: [Health]
@@ -451,6 +647,18 @@ paths:
                 type: string
 
 components:
+  securitySchemes:
+    AdminKey:
+      type: apiKey
+      in: header
+      name: X-Admin-Key
+      description: ADMIN_API_KEY environment variable
+    AdminUser:
+      type: apiKey
+      in: header
+      name: X-User-Id
+      description: Platform admin user (e.g. user_admin)
+
   parameters:
     UserId:
       name: X-User-Id
@@ -817,3 +1025,89 @@ components:
         nextCursor:
           type: string
           nullable: true
+
+    SeedSnapshot:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              email:
+                type: string
+              displayName:
+                type: string
+        projects:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              key:
+                type: string
+              name:
+                type: string
+        members:
+          type: array
+          items:
+            type: object
+            properties:
+              projectId:
+                type: string
+              userId:
+                type: string
+              role:
+                type: string
+                enum: [ADMIN, PROJECT_LEAD, MEMBER, VIEWER]
+
+    AddUserRequest:
+      type: object
+      required: [id, email, displayName]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        displayName:
+          type: string
+
+    CreateProjectRequest:
+      type: object
+      required: [id, key, name]
+      properties:
+        id:
+          type: string
+        key:
+          type: string
+        name:
+          type: string
+        adminUserId:
+          type: string
+
+    CreateProjectResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        key:
+          type: string
+        name:
+          type: string
+        workflowStatuses:
+          type: array
+          items:
+            type: string
+
+    AddMemberRequest:
+      type: object
+      required: [userId, role]
+      properties:
+        userId:
+          type: string
+        role:
+          type: string
+          enum: [ADMIN, PROJECT_LEAD, MEMBER, VIEWER]

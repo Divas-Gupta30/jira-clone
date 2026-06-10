@@ -58,7 +58,9 @@ Seed users for project `proj_abc`: `user_admin`, `user_lead`, `user_member`, `us
 | GET | `/api/health/ready` | Readiness |
 | GET | `/api/metrics` | Prometheus metrics |
 
-**API docs:** [Swagger UI](http://localhost:8001/api/docs) · [OpenAPI spec](http://localhost:8001/api/docs/openapi.yaml)
+**API docs:** [Swagger UI](http://localhost:8001/api/docs) · [OpenAPI spec](http://localhost:8001/api/docs/openapi.yaml) · [Admin API](docs/admin-api.md)
+
+**Postman:** import [postman/Project-Board.postman_collection.json](postman/Project-Board.postman_collection.json) and optionally [postman/Local.postman_environment.json](postman/Local.postman_environment.json). Set `baseUrl` and `adminApiKey` for your target (local or Render).
 
 Unversioned `/api/...` routes also work for backward compatibility.
 
