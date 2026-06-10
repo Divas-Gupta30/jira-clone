@@ -17,7 +17,7 @@ services:
     name: project-board
     runtime: docker
     plan: free
-    healthCheckPath: /api/health/ready
+    healthCheckPath: /api/health/live
     envVars:
       - key: DATABASE_URL
         fromDatabase:

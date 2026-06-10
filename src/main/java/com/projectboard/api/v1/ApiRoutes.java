@@ -3,6 +3,7 @@ package com.projectboard.api.v1;
 import com.projectboard.application.*;
 import com.projectboard.domain.model.*;
 import com.projectboard.api.middleware.Middleware;
+import com.projectboard.infrastructure.redis.RedisCache;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 
@@ -11,21 +12,26 @@ import java.util.Map;
 
 public class ApiRoutes {
 
+    private static final int RATE_LIMIT_PER_MINUTE = 120;
+
     private final IssueService issues;
     private final SprintService sprints;
     private final CommentService comments;
     private final SearchService search;
+    private final RedisCache cache;
 
     public ApiRoutes(IssueService issues, SprintService sprints,
-                     CommentService comments, SearchService search) {
+                     CommentService comments, SearchService search, RedisCache cache) {
         this.issues = issues;
         this.sprints = sprints;
         this.comments = comments;
         this.search = search;
+        this.cache = cache;
     }
 
     public void register(Javalin app) {
         app.before("/api/v1/*", Middleware.auth());
+        app.before("/api/v1/*", Middleware.rateLimit(cache, RATE_LIMIT_PER_MINUTE));
 
         app.post("/api/v1/projects/{projectId}/issues", this::createIssue);
         app.get("/api/v1/projects/{projectId}/board", this::getBoard);
@@ -46,9 +52,13 @@ public class ApiRoutes {
 
         // v1 aliases without version prefix for backward compat
         app.before("/api/projects/*", Middleware.auth());
+        app.before("/api/projects/*", Middleware.rateLimit(cache, RATE_LIMIT_PER_MINUTE));
         app.before("/api/issues/*", Middleware.auth());
+        app.before("/api/issues/*", Middleware.rateLimit(cache, RATE_LIMIT_PER_MINUTE));
         app.before("/api/sprints/*", Middleware.auth());
+        app.before("/api/sprints/*", Middleware.rateLimit(cache, RATE_LIMIT_PER_MINUTE));
         app.before("/api/search", Middleware.auth());
+        app.before("/api/search", Middleware.rateLimit(cache, RATE_LIMIT_PER_MINUTE));
 
         app.post("/api/projects/{projectId}/issues", this::createIssue);
         app.get("/api/projects/{projectId}/board", this::getBoard);

@@ -64,7 +64,7 @@ public final class Application {
 
         HealthRoutes health = new HealthRoutes(ds, wsHub);
         OpenApiRoutes openApi = new OpenApiRoutes(config);
-        ApiRoutes api = new ApiRoutes(issueService, sprintService, commentService, searchService);
+        ApiRoutes api = new ApiRoutes(issueService, sprintService, commentService, searchService, cache);
         AdminRoutes admin = new AdminRoutes(adminSeedService);
 
         Javalin app = Javalin.create(cfg -> {
@@ -74,7 +74,7 @@ public final class Application {
 
         app.before(Middleware.correlationId());
         app.before("/api/v1/admin/*", Middleware.adminAuth(config, accessRepo));
-        app.before("/api/*", Middleware.rateLimit(cache, 120));
+        app.before("/api/v1/admin/*", Middleware.rateLimit(cache, 120));
         app.after(ctx -> MDC.clear());
 
         health.register(app);

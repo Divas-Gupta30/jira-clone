@@ -77,13 +77,25 @@ public final class Middleware {
 
     public static Handler rateLimit(RedisCache cache, int maxPerMinute) {
         return ctx -> {
+            if (skipRateLimit(ctx.path())) {
+                return;
+            }
             String userId = ctx.attribute("userId");
+            if (userId == null || userId.isBlank()) {
+                return;
+            }
             String key = "rl:" + userId + ":" + ctx.method() + ":" + ctx.path();
             if (!cache.checkRateLimit(key, maxPerMinute, Duration.ofMinutes(1))) {
                 error(ctx, HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMITED", "Too many requests");
                 ctx.skipRemainingHandlers();
             }
         };
+    }
+
+    private static boolean skipRateLimit(String path) {
+        return path.startsWith("/api/health")
+                || path.equals("/api/metrics")
+                || path.startsWith("/api/docs");
     }
 
     public static void handleException(Exception e, Context ctx) {

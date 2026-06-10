@@ -2,14 +2,23 @@ package com.projectboard.infrastructure.redis;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projectboard.domain.model.BoardView;
+import io.lettuce.core.ClientOptions;
 import io.lettuce.core.RedisClient;
+import io.lettuce.core.SocketOptions;
+import io.lettuce.core.TimeoutOptions;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.sync.RedisCommands;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.util.Optional;
 
 public class RedisCache implements AutoCloseable {
+
+    private static final Logger log = LoggerFactory.getLogger(RedisCache.class);
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(2);
 
     private final RedisClient client;
     private final StatefulRedisConnection<String, String> conn;
@@ -18,9 +27,19 @@ public class RedisCache implements AutoCloseable {
 
     public RedisCache(String redisUrl, ObjectMapper mapper) {
         this.client = RedisClient.create(redisUrl);
+        this.client.setOptions(ClientOptions.builder()
+                .socketOptions(SocketOptions.builder()
+                        .connectTimeout(CONNECT_TIMEOUT)
+                        .build())
+                .timeoutOptions(TimeoutOptions.builder()
+                        .fixedTimeout(COMMAND_TIMEOUT)
+                        .build())
+                .autoReconnect(true)
+                .build());
         this.conn = client.connect();
         this.cmd = conn.sync();
         this.mapper = mapper;
+        log.info("Redis connected");
     }
 
     public Optional<BoardView> getBoard(String projectId) {
@@ -40,19 +59,27 @@ public class RedisCache implements AutoCloseable {
     }
 
     public void invalidateBoard(String projectId) {
-        cmd.del(boardKey(projectId));
+        try {
+            cmd.del(boardKey(projectId));
+        } catch (Exception ignored) {}
     }
 
+    /** Returns true if allowed. Fails open when Redis is unavailable. */
     public boolean checkRateLimit(String key, int max, Duration window) {
-        String count = cmd.get(key);
-        if (count == null) {
-            cmd.setex(key, window.getSeconds(), "1");
+        try {
+            String count = cmd.get(key);
+            if (count == null) {
+                cmd.setex(key, window.getSeconds(), "1");
+                return true;
+            }
+            int n = Integer.parseInt(count);
+            if (n >= max) return false;
+            cmd.incr(key);
+            return true;
+        } catch (Exception e) {
+            log.warn("Rate limit skipped (Redis unavailable): {}", e.getMessage());
             return true;
         }
-        int n = Integer.parseInt(count);
-        if (n >= max) return false;
-        cmd.incr(key);
-        return true;
     }
 
     public Optional<IdempotencyRecord> getIdempotency(String key) {
