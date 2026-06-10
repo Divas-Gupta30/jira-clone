@@ -2,11 +2,12 @@
   "info": {
     "_postman_id": "a1b2c3d4-project-board-api",
     "name": "Project Board API",
-    "description": "Jira-like project board backend — health, admin seed, issues, board, sprints, comments, activity, and search.\n\n## Setup\n1. Import this collection.\n2. Set collection variables:\n   - `baseUrl` — e.g. `http://localhost:8001` or `https://your-app.onrender.com`\n   - `adminApiKey` — your `ADMIN_API_KEY` (or `demo-admin-key` for local Docker)\n3. Run **Flows** folder top-to-bottom, or individual requests.\n\n## Auth\n- Regular API: `X-User-Id` header (seed users: user_admin, user_lead, user_member, user_viewer)\n- Admin API: `X-Admin-Key` **or** `X-User-Id: user_admin`\n\nDocs: docs/admin-api.md",
+    "description": "Jira-like project board backend — health, admin seed, issues, board, sprints, comments, activity, search, and WebSocket.\n\n## Setup\n1. Import this collection (+ optional environment from `postman/`).\n2. Set collection variables:\n   - `baseUrl` — `http://localhost:8001` or `https://your-app.onrender.com`\n   - `wsUrl` — `ws://localhost:8001` or `wss://your-app.onrender.com`\n   - `adminApiKey` — `ADMIN_API_KEY` from Render (or `demo-admin-key` locally)\n3. HTTP: run **Flows** folder or individual requests.\n4. WebSocket: see **WebSocket** folder (Postman v10+ required).\n\n## Auth\n- HTTP API: `X-User-Id` header\n- WebSocket: `project_id` + `user_id` query params only\n- Admin: `X-Admin-Key` or `X-User-Id: user_admin`",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:8001" },
+    { "key": "wsUrl", "value": "ws://localhost:8001" },
     { "key": "adminApiKey", "value": "demo-admin-key" },
     { "key": "projectId", "value": "proj_abc" },
     { "key": "memberUserId", "value": "user_member" },
@@ -17,7 +18,9 @@
     { "key": "issueVersion", "value": "3" },
     { "key": "sprintId", "value": "sprint_11" },
     { "key": "demoProjectId", "value": "proj_demo" },
-    { "key": "demoUserId", "value": "user_demo" }
+    { "key": "demoUserId", "value": "user_demo" },
+    { "key": "wsIssueId", "value": "PROJ-123" },
+    { "key": "wsIssueVersion", "value": "3" }
   ],
   "item": [
     {
@@ -557,6 +560,208 @@
             ],
             "url": "{{baseUrl}}/api/v1/admin/seed"
           }
+        }
+      ]
+    },
+    {
+      "name": "WebSocket",
+      "description": "Requires Postman v10+. Open a WS request → Connect → keep tab open. Run **Triggers (HTTP)** in another tab to see events.\n\nEvents: `presence`, `issue_created`, `issue_updated`, `issue_moved`, `comment_added`, `sprint_updated`",
+      "item": [
+        {
+          "name": "Connections",
+          "item": [
+            {
+              "name": "Board WS — user_lead",
+              "protocolProfileBehavior": {
+                "protocolVersion": "webSocket"
+              },
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{wsUrl}}/ws/board?project_id={{projectId}}&user_id={{leadUserId}}"
+              },
+              "message": [
+                {
+                  "type": "send",
+                  "message": "ping"
+                }
+              ]
+            },
+            {
+              "name": "Board WS — user_member",
+              "protocolProfileBehavior": {
+                "protocolVersion": "webSocket"
+              },
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{wsUrl}}/ws/board?project_id={{projectId}}&user_id={{memberUserId}}"
+              },
+              "message": [
+                {
+                  "type": "send",
+                  "message": "ping"
+                }
+              ]
+            },
+            {
+              "name": "Board WS — missing project_id (expect close)",
+              "protocolProfileBehavior": {
+                "protocolVersion": "webSocket"
+              },
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{wsUrl}}/ws/board?user_id={{leadUserId}}"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Triggers (HTTP)",
+          "description": "Run while a WebSocket connection is open on the same project_id.",
+          "item": [
+            {
+              "name": "Trigger — create issue (issue_created)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "  const body = pm.response.json();",
+                      "  pm.collectionVariables.set('wsIssueId', body.issueId);",
+                      "  pm.collectionVariables.set('wsIssueVersion', String(body.version));",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "X-User-Id", "value": "{{memberUserId}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"type\": \"TASK\",\n  \"title\": \"WebSocket test issue\",\n  \"priority\": \"MEDIUM\",\n  \"labels\": [\"websocket\"]\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/projects/{{projectId}}/issues"
+              }
+            },
+            {
+              "name": "Trigger — transition In Progress (issue_moved)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "  pm.collectionVariables.set('wsIssueVersion', String(pm.response.json().version));",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "X-User-Id", "value": "{{memberUserId}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"toStatus\": \"In Progress\",\n  \"version\": {{wsIssueVersion}}\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/issues/{{wsIssueId}}/transitions"
+              }
+            },
+            {
+              "name": "Trigger — add comment (comment_added)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "X-User-Id", "value": "{{leadUserId}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"body\": \"WS demo comment @user_member\",\n  \"parentId\": null\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/issues/{{wsIssueId}}/comments"
+              }
+            },
+            {
+              "name": "Trigger — update issue (issue_updated)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "  pm.collectionVariables.set('wsIssueVersion', String(pm.response.json().version));",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "X-User-Id", "value": "{{memberUserId}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"version\": {{wsIssueVersion}},\n  \"title\": \"WebSocket test issue (updated)\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/issues/{{wsIssueId}}"
+              }
+            },
+            {
+              "name": "Trigger — start sprint (sprint_updated)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "X-User-Id", "value": "{{leadUserId}}" }
+                ],
+                "url": "{{baseUrl}}/api/v1/sprints/{{sprintId}}/start"
+              }
+            },
+            {
+              "name": "Trigger — comment on PROJ-123 (comment_added)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "X-User-Id", "value": "{{leadUserId}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"body\": \"WebSocket trigger on seed issue @user_member\",\n  \"parentId\": null\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/issues/PROJ-123/comments"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Demo flow (manual)",
+          "description": "1. Open **Board WS — user_lead** → Connect\n2. Open **Board WS — user_member** in new tab → Connect → see `presence` with both users\n3. Run **Trigger — create issue** → see `issue_created` in both WS tabs\n4. Run **Trigger — transition** → see `issue_moved`\n5. Run **Trigger — add comment** → see `comment_added`\n6. Disconnect one WS tab → `presence` updates in the other",
+          "item": [
+            {
+              "name": "README — see folder description",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/health/live"
+              }
+            }
+          ]
         }
       ]
     },

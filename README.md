@@ -60,7 +60,11 @@ Seed users for project `proj_abc`: `user_admin`, `user_lead`, `user_member`, `us
 
 **API docs:** [Swagger UI](http://localhost:8001/api/docs) · [OpenAPI spec](http://localhost:8001/api/docs/openapi.yaml) · [Admin API](docs/admin-api.md)
 
-**Postman:** import [postman/Project-Board.postman_collection.json](postman/Project-Board.postman_collection.json) and optionally [postman/Local.postman_environment.json](postman/Local.postman_environment.json). Set `baseUrl` and `adminApiKey` for your target (local or Render).
+**Postman:** import [postman/Project-Board.postman_collection.json](postman/Project-Board.postman_collection.json) and an environment:
+- [postman/Local.postman_environment.json](postman/Local.postman_environment.json) — local Docker
+- [postman/Render.postman_environment.json](postman/Render.postman_environment.json) — Render (`baseUrl` + `wsUrl` + `adminApiKey`)
+
+Set `baseUrl`, `wsUrl` (`ws://` local, `wss://` on Render), and `adminApiKey`. **WebSocket** folder requires Postman v10+.
 
 Unversioned `/api/...` routes also work for backward compatibility.
 
