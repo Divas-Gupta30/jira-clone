@@ -1,0 +1,11 @@
+target/
+.git/
+.idea/
+.vscode/
+*.iml
+.env
+.env.*
+!/.env.demo.example
+load-test/
+docs/
+dependency-reduced-pom.xml

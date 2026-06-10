@@ -99,6 +99,17 @@ ws://localhost:8001/ws/board?project_id=proj_abc&user_id=user_lead
 
 Events: `issue_created`, `issue_updated`, `issue_moved`, `comment_added`, `sprint_updated`, `presence`.
 
+## Deploy on Render
+
+1. Push this repo to GitHub.
+2. In [Render Dashboard](https://dashboard.render.com/) → **New** → **Blueprint** → connect the repo.
+3. Render provisions **project-board** (web), **projectboard-db** (Postgres), and **projectboard-redis** (Key Value) from [`render.yaml`](render.yaml).
+4. After deploy, open `https://<your-service>.onrender.com/api/health/live`.
+
+The app reads `DATABASE_URL` and `REDIS_URL` from linked services, binds to Render's `PORT`, and uses `RENDER_EXTERNAL_URL` for OpenAPI/Swagger links. `ADMIN_API_KEY` is auto-generated — copy it from the service's **Environment** tab for `/api/v1/admin/*` calls.
+
+Free-tier web services spin down after inactivity; the first request after idle may take ~30s.
+
 ## Demo hosting
 
 Host on your **internal network** (company VPN / internal VM):

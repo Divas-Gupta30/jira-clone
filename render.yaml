@@ -1,0 +1,34 @@
+# Render Blueprint — deploy from Dashboard: New > Blueprint > connect repo.
+# Docs: https://render.com/docs/infrastructure-as-code
+
+databases:
+  - name: projectboard-db
+    plan: free
+    databaseName: projectboard
+
+services:
+  - type: keyvalue
+    name: projectboard-redis
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
+
+  - type: web
+    name: project-board
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health/ready
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: projectboard-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: projectboard-redis
+          property: connectionString
+      - key: ADMIN_API_KEY
+        generateValue: true
+      - key: DB_POOL_SIZE
+        value: "5"
