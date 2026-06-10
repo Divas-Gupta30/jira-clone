@@ -49,6 +49,7 @@ public record AppConfig(
 
     private record DbSettings(String jdbcUrl, String user, String password) {
 
+
         static DbSettings resolve() {
             String dbUrl = System.getenv("DB_URL");
             if (dbUrl != null && !dbUrl.isBlank()) {
